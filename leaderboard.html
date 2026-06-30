@@ -1055,16 +1055,21 @@ async function loadStats() {
   document.getElementById('stats-loading').classList.remove('hidden');
   document.getElementById('stats-content').classList.add('hidden');
   try {
-    const [statRows, lbRows] = await Promise.all([ fetchCsv(CSV_STATS), fetchCsv(CSV_LEADERBOARD) ]);
+    const [statRows, lbRows, stRows] = await Promise.all([
+      fetchCsv(CSV_STATS), fetchCsv(CSV_LEADERBOARD), fetchCsv(CSV_STANDINGS)
+    ]);
 
     const playerStats = statRows.map(rowToStatsEntry).filter(Boolean);
-
-    // "Most picked" — derive from the leaderboard picks (so the Stats tab's
-    // most-picked panel still works without a separate feed).
     const mostPicked = computeMostPicked(lbRows);
 
+    // Total matches played = sum of every team's "played" ÷ 2 (each match
+    // is counted once per team). Derived from the standings CSV.
+    let totalPlayedSum = 0;
+    stRows.forEach(r => { const p = parseInt(r.P,10); if (!isNaN(p)) totalPlayedSum += p; });
+    const totalMatches = Math.round(totalPlayedSum / 2);
+
     fullStatsData = { playerStats: playerStats, mostPicked: mostPicked,
-                      totalPlayers: playerStats.length };
+                      totalPlayers: playerStats.length, totalMatches: totalMatches };
     renderStats(fullStatsData);
   } catch(e) {
     document.getElementById('stats-loading').innerHTML = '<div style="color:var(--danger)">⚠️ Could not load stats.</div>';
@@ -1404,7 +1409,14 @@ function _computeMatchNumber(m) {
 const BRACKET_STAGE_LABELS = { R32:'Round of 32', R16:'Round of 16', QF:'Quarter-Final', SF:'Semi-Final', '3rd':'3rd Place', Final:'Final' };
 const BRACKET_STAGE_SHORT  = { R32:'R32', R16:'R16', QF:'QF', SF:'SF', '3rd':'3rd', Final:'Final' };
 
+let bracketLoaded = false;
+
 async function loadKnockoutBracket() {
+  // Already have the data — just re-render (instant, no re-fetch, no flash).
+  if (bracketLoaded && bracketDataFull.length) {
+    renderKnockoutBracket();
+    return;
+  }
   document.getElementById('bracket-loading').classList.remove('hidden');
   document.getElementById('bracket-empty').classList.add('hidden');
   document.getElementById('bracket-scroll-wrap').classList.add('hidden');
@@ -1417,6 +1429,7 @@ async function loadKnockoutBracket() {
       Team1: r.Team1, Team2: r.Team2, Result: r.Result, Winner: r.Winner, Date: r.Date
     })).filter(r => r.Stage);
     clearMatchNumCache();
+    bracketLoaded = true;
     renderKnockoutBracket();
   } catch(e) {
     document.getElementById('bracket-loading').innerHTML = '<div style="color:var(--danger)">⚠️ Could not load bracket.</div>';
@@ -1460,6 +1473,30 @@ function getStageMatches(stage) {
   return matches;
 }
 
+// Determines the "active phase": the round currently being played. A match
+// is decided if it has a Winner. We find the furthest stage that has any
+// decided match; if that stage is fully decided, the action has moved to the
+// next stage, so we show that. Falls back to R32.
+function pickActiveStage() {
+  const decidedCount = stage => bracketDataFull.filter(b => b.Stage === stage && b.Winner && b.Winner !== '').length;
+  const totalCount   = stage => bracketDataFull.filter(b => b.Stage === stage).length;
+  const expected = { R32:16, R16:8, QF:4, SF:2, '3rd':1, Final:1 };
+
+  // Walk from latest to earliest; the first stage with ANY decided match is
+  // the frontier. If it's fully decided, jump to the next stage.
+  for (let i = BRACKET_STAGE_ORDER.length - 1; i >= 0; i--) {
+    const stage = BRACKET_STAGE_ORDER[i];
+    if (decidedCount(stage) > 0) {
+      const exp = expected[stage] || totalCount(stage);
+      if (decidedCount(stage) >= exp && i < BRACKET_STAGE_ORDER.length - 1) {
+        return BRACKET_STAGE_ORDER[i + 1]; // this round done -> next round is active
+      }
+      return stage; // this round is in progress
+    }
+  }
+  return 'R32';
+}
+
 function renderKnockoutBracket() {
   document.getElementById('bracket-loading').classList.add('hidden');
 
@@ -1470,11 +1507,13 @@ function renderKnockoutBracket() {
   }
   document.getElementById('bracket-scroll-wrap').classList.remove('hidden');
 
-  // Default to the furthest-along stage that has REAL data (so people
-  // land on what's currently happening); fall back to R32.
+  // Default to the "active phase of play": the furthest stage that has at
+  // least one DECIDED match (a real Winner). The engine writes placeholder
+  // rows for all future stages, so checking for mere existence would wrongly
+  // jump to the Final. The NEXT stage after the last fully-decided one is
+  // where the action is, so we land there.
   if (!currentBracketStage) {
-    const furthest = [...BRACKET_STAGE_ORDER].reverse().find(s => bracketDataFull.some(b => b.Stage === s));
-    currentBracketStage = furthest || 'R32';
+    currentBracketStage = pickActiveStage();
   }
 
   // Pills — all stages are clickable, since later rounds render from the
