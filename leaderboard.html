@@ -6,6 +6,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#000000">
   <title>WC2026 Workplace Game — Leaderboard</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏆</text></svg>">
   <link href="https://fonts.googleapis.com/css2?family=Quintessential&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -960,6 +961,14 @@ function rowToFixture(r) {
            date:r.Date||'', time:r.Time||'', utcDate:r.UtcDate||'' };
 }
 
+// Formats a fixture's YYYY-MM-DD date as DD/MM (empty if missing/invalid).
+function ddmm(dateStr) {
+  if (!dateStr) return '';
+  const parts = String(dateStr).split('-'); // [YYYY, MM, DD]
+  if (parts.length !== 3) return '';
+  return parts[2] + '/' + parts[1];
+}
+
 function renderTournament(data) {
   document.getElementById('tournament-loading').classList.add('hidden');
   document.getElementById('tournament-content').classList.remove('hidden');
@@ -991,7 +1000,7 @@ function renderTournament(data) {
           <div class="rr-team" style="${homeWin?'color:var(--success)':awayWin?'opacity:0.45':''}">${esc(m.homeTeam)}</div>
           <div class="rr-score" style="color:${scoreColor}">${scoreStr}</div>
           <div class="rr-team right" style="${awayWin?'color:var(--success)':homeWin?'opacity:0.45':''}">${esc(m.awayTeam)}</div>
-          <div class="rr-date">${m.time||''}</div>
+          <div class="rr-date">${ddmm(m.date)}${m.time ? ' · ' + m.time : ''}</div>
         </div>`;
     });
     renderExpandableRows(recentDiv, rows);
@@ -1011,7 +1020,7 @@ function renderTournament(data) {
           <div class="ur-team">${esc(m.homeTeam)}</div>
           <div class="ur-vs">vs</div>
           <div class="ur-team right">${esc(m.awayTeam)}</div>
-          <div class="ur-time">${m.time||''}</div>
+          <div class="ur-time">${ddmm(m.date)}${m.time ? ' · ' + m.time : ''}</div>
         </div>`;
     });
     renderExpandableRows(upcomingDiv, rows);
